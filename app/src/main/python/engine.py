@@ -65,7 +65,8 @@ def read_midi(path):
     for ti in sorted(notes):
         ns = sorted(notes[ti])
         result.append({'id': ti, 'name': names.get(ti, 'Без названия'),
-                       'notes': ns, 'count': len(ns), 'duration': max(n[1] for n in ns)})
+                       'notes': ns, 'count': len(ns), 'duration': max(n[1] for n in ns),
+                       'midi_duration': sec})
     if not result:
         raise ValueError('В MIDI нет мелодических нот. Канал ударных исключён.')
     return result
@@ -79,6 +80,25 @@ def track_notes(path, track_id):
     for t in read_midi(path):
         if t['id'] == int(track_id):
             return t['notes']
+    raise ValueError('Дорожка не найдена')
+
+
+def render_region(path, track_id, source_frames, offset):
+    """Common output window: source duration or full MIDI end, whichever is first.
+
+    MIDI end includes trailing rests and the global tempo map. Offset moves that
+    end together with the notes. Events outside the window are not processed.
+    """
+    for track in read_midi(path):
+        if track['id'] == int(track_id):
+            frames = min(source_frames, round((track['midi_duration'] + offset)*RATE))
+            if frames <= 0:
+                raise ValueError('Вокал и MIDI не пересекаются по времени. Измените сдвиг.')
+            notes = [n for n in track['notes']
+                     if round((n[0]+offset)*RATE) < frames and n[1]+offset > 0]
+            if not notes:
+                raise ValueError('В пределах исходного вокала нет нот выбранной дорожки MIDI. Измените дорожку или сдвиг.')
+            return notes, frames
     raise ValueError('Дорожка не найдена')
 
 
@@ -137,7 +157,6 @@ def preview(midi, track, policy, transpose, output):
 def render(wav_path, midi, track, policy, offset, transpose, mute_gaps,
            output, cancel_path, callback=None):
     import pyworld as pw
-    notes = track_notes(midi, track)
     with wave.open(wav_path, 'rb') as w:
         if w.getnchannels() != 1 or w.getsampwidth() != 2 or w.getframerate() != RATE:
             raise ValueError('Ожидается PCM16 mono 32000 Гц')
@@ -148,8 +167,8 @@ def render(wav_path, midi, track, policy, offset, transpose, mute_gaps,
     transpose = int(transpose)
     if not np.isfinite(offset) or abs(offset) > 600 or not -24 <= transpose <= 24:
         raise ValueError('Недопустимый сдвиг или транспозиция')
-    if max(n[1] for n in notes) + offset <= 0 or min(n[0] for n in notes) + offset >= count / RATE:
-        raise ValueError('Вокал и ноты MIDI не пересекаются по времени. Измените сдвиг.')
+    source_count = count
+    notes, count = render_region(midi, track, count, offset)
     frequencies = [440 * 2 ** ((n[2]+transpose-69)/12) for n in notes
                    if n[1]+offset > 0 and n[0]+offset < count/RATE]
     if any(f < 40 or f > 2000 for f in frequencies):
@@ -189,6 +208,9 @@ def render(wav_path, midi, track, policy, offset, transpose, mute_gaps,
                 blend = np.linspace(0, 1, n)
                 y[:n] = tail[:n]*(1-blend) + y[:n]*blend
             keep = len(y) if start+block >= count else (start+block-margin-left)
+            if start+block >= count and count < source_count:
+                fade = min(256, keep)
+                y[keep-fade:keep] *= np.linspace(1, 0, fade)
             dest.writeframes((np.clip(y[:keep], -1, 1)*32767).astype('<i2').tobytes())
             tail = y[keep:].copy()
             if callback is not None:

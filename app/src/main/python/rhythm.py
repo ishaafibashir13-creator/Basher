@@ -1,8 +1,9 @@
 """Move detected vocal units to MIDI onsets without resampling or a vocoder.
 
 Conservative segmentation: silence and deep envelope valleys, not phoneme
-recognition. Refuse ambiguous counts and overlapping speech rather than silently
-repeat/drop syllables or time-compress consonants. Audio memory is block bounded.
+recognition. Within the shared time window, refuse ambiguous counts and overlapping speech
+rather than silently repeat/drop syllables or time-compress consonants. The
+terminal boundary is cropped to the shorter input. Audio memory is block bounded.
 """
 import os
 import json
@@ -18,7 +19,7 @@ def check_cancel(path):
         raise InterruptedError('Обработка отменена')
 
 
-def detect_units(path, sensitivity, cancel):
+def detect_units(path, sensitivity, cancel, max_frames=None):
     envelope = []
     with wave.open(str(path), 'rb') as src:
         if (src.getnchannels(), src.getsampwidth(), src.getframerate()) != (1, 2, RATE):
@@ -26,9 +27,13 @@ def detect_units(path, sensitivity, cancel):
         count = src.getnframes()
         if not RATE // 10 <= count <= RATE * 600:
             raise ValueError('Длительность вокала должна быть от 0,1 секунды до 10 минут')
-        while True:
+        if max_frames is not None:
+            count = min(count, max_frames)
+        remaining = count
+        while remaining > 0:
             check_cancel(cancel)
-            raw = src.readframes(HOP * 200)
+            raw = src.readframes(min(HOP * 200, remaining))
+            remaining -= len(raw)//2
             if not raw:
                 break
             x = np.frombuffer(raw, '<i2').astype(float) / 32768
@@ -74,39 +79,42 @@ def detect_units(path, sensitivity, cancel):
 
 def render(wav, midi, track, offset, mute_gaps, output, cancel, callback=None,
            sensitivity=.12):
-    from engine import track_notes
+    from engine import render_region
     offset = float(offset)
     sensitivity = float(sensitivity)
     if not np.isfinite(offset) or abs(offset) > 600 or sensitivity not in (.06, .12, .24):
         raise ValueError('Недопустимый сдвиг или чувствительность')
     check_cancel(cancel)
-    notes = track_notes(midi, track)
+    with wave.open(str(wav), 'rb') as src:
+        source_frames = src.getnframes()
+    notes, length = render_region(midi, track, source_frames, offset)
     # Chord notes with identical onsets form ONE rhythmic event.
     events = {}
     for start, end, _, _ in notes:
         pos = round((start+offset)*RATE)
-        stop = round((end+offset)*RATE)
+        stop = min(length, round((end+offset)*RATE))
         if pos < 0:
             raise ValueError('Сдвиг помещает начало MIDI раньше нуля. Увеличьте сдвиг.')
         events[pos] = max(events.get(pos, 0), stop)
     targets = sorted(events)
-    if max(events.values()) > RATE*600:
-        raise ValueError('Результат с учётом сдвига длиннее 10 минут')
-    units = detect_units(wav, sensitivity, cancel)
+    units = detect_units(wav, sensitivity, cancel, max_frames=length)
     if len(units) != len(targets):
         raise ValueError(f'Найдено вокальных фрагментов: {len(units)}, начал нот MIDI: {len(targets)}. '
                          'Нужен один слог на одно начало ноты. Измените чувствительность, '
                          'выберите другую дорожку или подготовьте вокал с более ясными паузами. '
                          'Слоги не удалены и не повторены.')
+    # The terminal boundary is an explicit crop; interior syllables still
+    # retain their natural speed and must fit before the next onset/note-off.
+    units = [(a, min(b, a+length-target))
+             for (a, b), target in zip(units, targets)]
     for i, ((a, b), target) in enumerate(zip(units, targets)):
-        limit = targets[i+1] if i+1 < len(targets) else RATE*600
+        limit = targets[i+1] if i+1 < len(targets) else length
         if mute_gaps:
             limit = min(limit, events[target])
         if target+b-a > limit:
             raise ValueError(f'Фрагмент {i+1} ({(b-a)/RATE:.2f} с) не помещается '
                              f'в интервал MIDI ({(limit-target)/RATE:.2f} с) без сжатия или обрезки. '
                              'Уменьшите темп MIDI или отключите паузы MIDI, если они включены.')
-    length = max(max(events.values()), targets[-1]+units[-1][1]-units[-1][0])
     with wave.open(str(wav), 'rb') as src, wave.open(str(output), 'wb') as dest:
         dest.setnchannels(1); dest.setsampwidth(2); dest.setframerate(RATE)
         cursor = 0

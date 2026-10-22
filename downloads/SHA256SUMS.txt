@@ -1,2 +1,4 @@
 bd44d496ecb5aba4e0b0bf59bb11c5f5b558cfe987a8a7ae03eb18f261b8e745  VocalMidi-0.2-source.zip
 24f35e6fbdbc350f84a5fd566c81d0ec2c5569a8b003e7f40140725752073a5f  VocalMidi-0.2.apk
+07a12b1bc8a032462831a9b94c94debe9cd8242fc9c483ea163fcf4b72c8d6a6  VocalMidi-0.3-source.zip
+5d7c024528915db0317e2c4e5db1fbfc1b9c02f91c54e7d669db9b64dc6cb919  VocalMidi-0.3.apk

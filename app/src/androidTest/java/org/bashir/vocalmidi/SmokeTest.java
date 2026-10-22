@@ -67,6 +67,13 @@ public class SmokeTest extends Instrumentation {
                 "with wave.open(d+'/result.wav') as w: y=np.frombuffer(w.readframes(w.getnframes()),'<i2')\n"+
                 "assert len(y)==38400\n"+
                 "for (a,b),pos in zip(units,[3200,25600]): np.testing.assert_array_equal(x[a+256:b-256],y[pos+256:pos+b-a-256])\n", globals);
+            Python.getInstance().getModule("builtins").callAttr("exec",
+                "m=mido.MidiFile(d+'/melody.mid'); m.tracks[0].append(mido.Message('note_on',note=64,time=960)); m.tracks[0].append(mido.Message('note_off',note=64,time=480)); m.save(d+'/long.mid')\n"+
+                "rhythm.render(d+'/vocal.wav',d+'/long.mid',0,0,False,d+'/long-result.wav',d+'/cancel')\n"+
+                "with wave.open(d+'/long-result.wav') as w: assert w.getnframes()==64000\n"+
+                "m=mido.MidiFile(); t=mido.MidiTrack(); m.tracks.append(t); t.extend([mido.Message('note_on',note=60,time=96),mido.Message('note_off',note=60,time=480)]); m.save(d+'/short.mid')\n"+
+                "rhythm.render(d+'/vocal.wav',d+'/short.mid',0,0,False,d+'/short-result.wav',d+'/cancel')\n"+
+                "with wave.open(d+'/short-result.wav') as w: assert w.getnframes()==19200\n", globals);
             result.putString("stream","PASS: Android FFmpeg MP3-in-Matroska with unknown extension; embedded PyWORLD; MIDI preview; 440 Hz render; Activity and button labels; rhythm foreground service through UI button; unchanged sample interiors and exact MIDI placement.\n");
             finish(-1,result);
         }catch(Throwable ex){result.putString("stream","FAIL: "+android.util.Log.getStackTraceString(ex));finish(0,result);}

@@ -69,4 +69,16 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(InterruptedError):
             engine.render(str(w),self.midi(),1,'high',0,0,False,str(self.d/'out.wav'),str(c))
 
+    def test_output_duration_uses_shorter_file(self):
+        count = engine.RATE
+        t = np.arange(count)/engine.RATE
+        x = sum(.18/h*np.sin(2*np.pi*220*h*t) for h in range(1,9))
+        wav=self.d/'in.wav';engine.write_wav(wav,x)
+        for midi_seconds, offset, expected in [(.65,0,.65),(1.7,0,1),(1,0,1),(.65,.1,.75)]:
+            with self.subTest(midi_seconds=midi_seconds, offset=offset):
+                out=self.d/'out.wav'
+                engine.render(str(wav),self.midi(midi_seconds),1,'high',offset,0,False,str(out),str(self.d/'cancel'))
+                with wave.open(str(out)) as w:
+                    self.assertEqual(w.getnframes(),round(expected*engine.RATE))
+
 if __name__=='__main__': unittest.main()
