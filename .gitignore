@@ -1,0 +1,9 @@
+.gradle/
+build/
+app/build/
+native-build/
+local.properties
+*.jks
+*.keystore
+__pycache__/
+*.pyc

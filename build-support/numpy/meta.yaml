@@ -1,0 +1,14 @@
+package:
+  name: numpy
+  version: "1.26.2"
+
+build:
+  number: 0
+  script_env:
+    - SETUPTOOLS_USE_DISTUTILS=local
+
+requirements:
+  build:
+    # NumPy doesn't officially support building with setuptools on Python 3.12, but it
+    # still works with this version, plus a couple of patches.
+    - setuptools 69.0.2

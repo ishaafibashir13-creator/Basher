@@ -1,0 +1,31 @@
+plugins { id 'com.android.application'; id 'com.chaquo.python' }
+android {
+    namespace 'org.bashir.vocalmidi'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'org.bashir.vocalmidi'
+        minSdk 24
+        targetSdk 35
+        versionCode 2
+        versionName '0.2'
+        testInstrumentationRunner 'org.bashir.vocalmidi.SmokeTest'
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+chaquopy {
+    defaultConfig {
+        version '3.12'
+        pip {
+            options '--no-index', '--find-links', rootProject.file('vendor').absolutePath
+            install 'numpy==1.26.2'
+            install 'mido==1.3.3'
+            install 'pyworld==0.3.5'
+        }
+    }
+}
+dependencies {
+    implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7'
+    // This fork's published POM omits the Java runtime dependency.
+    implementation 'com.arthenica:smart-exception-java:0.2.1'
+}

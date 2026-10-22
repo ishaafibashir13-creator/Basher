@@ -1,0 +1,8 @@
+numpy
+
+[sdist]
+numpy
+cython>=0.24
+
+[test]
+nose
