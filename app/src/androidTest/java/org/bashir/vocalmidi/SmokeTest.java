@@ -36,7 +36,7 @@ public class SmokeTest extends Instrumentation {
                 .putString("tracks",engine.callAttr("inspect_midi",midi).toString())
                 .putString("audioName","Тестовый вокал").putString("midiName","Тестовый MIDI")
                 .putInt("mode",0).putInt("sensitivity",0).putString("offset","0")
-                .putString("transpose","0").putBoolean("mute",true).commit();
+                .putString("transpose","0").putBoolean("mute",true).remove("manualPlan").putBoolean("manualEnabled",false).commit();
             Activity activity=startActivitySync(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             waitForIdleSync();
             runOnMainSync(()->{
@@ -53,9 +53,36 @@ public class SmokeTest extends Instrumentation {
                 "np.testing.assert_allclose(starts,[.1,1.],atol=.025)\n"+
                 "for a,b,freq in [(.3,.6,220),(1.2,1.6,330)]:\n"+
                 " s=y[round(a*32000):round(b*32000)]; f=np.fft.rfftfreq(len(s),1/32000); peak=f[np.argmax(abs(np.fft.rfft(s*np.hanning(len(s)))))]; assert abs(peak-freq)<8,str(peak)\n",globals);
-            result.putString("stream","PASS: FFmpeg; native Rubber Band 4.0.0 R3; continuous MIDI warp through UI/service; measured onset timing and preserved pitch.\n");
+            Activity editor=startActivitySync(new Intent(c,ManualEditorActivity.class).putExtra("track",0).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            waitForIdleSync();
+            deadline=System.currentTimeMillis()+30000;
+            while(Jobs.busy&&System.currentTimeMillis()<deadline)Thread.sleep(100);
+            waitForIdleSync();
+            runOnMainSync(()->{
+                View decor=editor.getWindow().getDecorView();
+                if(checkLabels(decor,decor)!=4)throw new AssertionError("Expected four labeled numeric fields");
+                Button save=findButton(decor,"Сохранить разметку и использовать её");
+                if(save==null||!save.isEnabled())throw new AssertionError("Manual editor not ready");
+                save.performClick();
+                if(!c.getSharedPreferences("project",0).getBoolean("manualEnabled",false))throw new AssertionError("Manual plan not enabled");
+                if(c.getSharedPreferences("project",0).getString("manualPlan","").isEmpty())throw new AssertionError("Manual plan not persisted");
+                editor.finish();
+            });
+            result.putString("stream","PASS: FFmpeg; native Rubber Band 4.0.0 R3; continuous MIDI warp through UI/service; measured onset timing and preserved pitch; labeled manual editor, persisted and enabled plan.\n");
             finish(-1,result);
         }catch(Throwable ex){result.putString("stream","FAIL: "+android.util.Log.getStackTraceString(ex));finish(0,result);}
+    }
+    private boolean labeled(View root,int id) {
+        if(root.getLabelFor()==id)return true;
+        if(root instanceof ViewGroup){ViewGroup g=(ViewGroup)root;for(int i=0;i<g.getChildCount();i++)if(labeled(g.getChildAt(i),id))return true;}
+        return false;
+    }
+    private int checkLabels(View v,View root) {
+        int n=0;
+        if(v instanceof EditText){if(v.getId()==View.NO_ID||!labeled(root,v.getId()))throw new AssertionError("Unlabeled field");n++;}
+        if(v instanceof Button&&((Button)v).getText().length()>0){int min=Math.round(48*v.getResources().getDisplayMetrics().density);if(v.getMinimumHeight()<min)throw new AssertionError("Small control");}
+        if(v instanceof ViewGroup){ViewGroup g=(ViewGroup)v;for(int i=0;i<g.getChildCount();i++)n+=checkLabels(g.getChildAt(i),root);}
+        return n;
     }
     private Button findButton(View v,String text) {
         if(v instanceof Button&&((Button)v).getText().toString().equals(text))return (Button)v;

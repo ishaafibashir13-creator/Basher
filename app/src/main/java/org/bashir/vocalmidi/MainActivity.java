@@ -21,7 +21,8 @@ public class MainActivity extends Activity {
     private TextView status, vocalName, midiName, playback;
     private Spinner tracks, policy, mode, sensitivity;
     private EditText offset, transpose;
-    private CheckBox mute;
+    private CheckBox mute, manual;
+    private Button editManual;
     private Button playVocal, playMidi, render, playResult, export, cancel, pause;
     private final List<View> locked = new ArrayList<>();
     private final List<Integer> trackIds = new ArrayList<>();
@@ -63,8 +64,8 @@ public class MainActivity extends Activity {
         playMidi = button("Слушать выбранную мелодию", this::preview); locked.add(playMidi);
         text("Прослушивание использует простой синтезированный тембр и выбранное правило аккордов. Ударный канал не предлагается. Педаль и pitch bend в MIDI не учитываются.");
         heading("3. Подгонка вокала");
-        mode = spinner("Режим обработки", new String[]{"Ритм MIDI — Rubber Band R3", "Высота по MIDI — прежний ритм"});
-        mode.setSelection(prefs.getInt("mode",0));
+        mode = spinner("Режим обработки", new String[]{"Ритм MIDI — Rubber Band R3", "Высота по MIDI — прежний ритм", "Нарезка и ритм, затем тюнинг MIDI"});
+        mode.setSelection(prefs.getInt("mode",2));
         sensitivity = spinner("Поиск атак вокала (для выравнивания)", new String[]{"Обычное", "Меньше разрезов — тихий вокал", "Больше разрезов — явные паузы"});
         sensitivity.setSelection(prefs.getInt("sensitivity",0));
         text("Rubber Band R3 растягивает и сжимает длительность вокала под MIDI, сохраняя высоту. Фразы обрабатываются непрерывно, без обрезки окончаний между нотами. Один слог может приходиться на несколько нот. MIDI может содержать другую мелодию. Результат заканчивается по более короткому файлу; сдвиг MIDI учитывается. Транспозиция влияет на прослушивание MIDI и режим высоты.");
@@ -73,6 +74,16 @@ public class MainActivity extends Activity {
         text("Положительный сдвиг задерживает MIDI. Границы фраз сопоставляются автоматически по атакам, паузам и длительностям. Слишком сильное растяжение или сжатие может давать артефакты. Для точной настройки на конкретной записи прослушайте результат и при необходимости измените сдвиг или чувствительность.");
         mute = new CheckBox(this); mute.setText("Соблюдать паузы MIDI"); mute.setMinHeight(dp(56)); root.addView(mute); locked.add(mute);
         mute.setChecked(prefs.getBoolean("mute",true));
+        manual=new CheckBox(this);manual.setText("Использовать ручную разметку в режиме ритма и ритма с тюнингом");manual.setMinHeight(dp(56));root.addView(manual);locked.add(manual);
+        manual.setChecked(prefs.getBoolean("manualEnabled",false));
+        manual.setOnCheckedChangeListener((view,checked)->prefs.edit().putBoolean("manualEnabled",checked).apply());
+        editManual=button("Ручная нарезка и выравнивание — редактор для TalkBack",()->{
+            if(Jobs.busy)return;
+            try{double n=Double.parseDouble(offset.getText().toString().replace(',','.'));if(!Double.isFinite(n)||Math.abs(n)>600)throw new IllegalArgumentException();}
+            catch(Exception e){Jobs.update("Проверьте сдвиг MIDI: от −600 до 600 секунд");return;}
+            stopPlayback();saveSettings();startActivity(new Intent(this,ManualEditorActivity.class).putExtra("track",trackValue()));
+        });locked.add(editManual);
+        text("Ручной редактор: границы в секундах, позиции в долях MIDI, пошаговые кнопки и прослушивание без работы с волной. Для полного результата выберите режим «Нарезка и ритм, затем тюнинг MIDI»: сначала изменяется время, затем высота. Транспозиция применяется на этапе тюнинга.");
         render = button("Обработать вокал", this::render); locked.add(render);
         cancel = button("Отменить обработку", () -> {
             try { file("cancel").createNewFile(); Jobs.update("Отмена запрошена. Завершается текущий фрагмент."); }
@@ -88,7 +99,7 @@ public class MainActivity extends Activity {
         button("Вперёд на 10 секунд", () -> seek(10000));
         button("Остановить воспроизведение", this::stopPlayback);
         button("Справка и ограничения", () -> new AlertDialog.Builder(this).setTitle("Как получить лучший результат")
-            .setMessage("1. Выберите чистую запись одного голоса и MIDI.\n2. Выберите дорожку и послушайте мелодию.\n3. Совместите начало нот с голосом с помощью сдвига.\n4. Запустите обработку и сохраните WAV.\n\nPyWORLD меняет высоту звучащих участков голоса, сохраняя спектральную огибающую. Согласные и дыхание остаются непитчевыми. Большие интервалы могут звучать искусственно. В режиме ритма работает Rubber Band 4.0.0 R3/Finer: длительности фраз растягиваются или сжимаются, высота голоса сохраняется. Согласные и переходы обрабатываются непрерывно. Выравнивание опирается на атаки, паузы и длительности; MIDI может быть с другой мелодией. Разное число событий не требует обрезки каждого слога: одна фраза может охватывать несколько нот. Опция пауз заглушает только реальные паузы MIDI, без разрывов между соседними легато-нотами. Результат ограничен более коротким файлом. Сильные изменения темпа могут давать артефакты; автоматическое определение атак зависит от записи. Для последующего тюна можно сохранить выровненный WAV, выбрать его как исходник и запустить режим высоты.\n\nFFmpeg определяет формат по содержимому, а не расширению. При ошибке есть дополнительная попытка чтения как MP3. Зашифрованные, повреждённые и неизвестные форматы могут не открыться.\n\nВокал смешивается в моно 32 кГц, результат — WAV PCM16. Максимум 10 минут и 512 МБ исходного файла. MIDI: тип 0/1 и RIFF RMID, до 8 МБ.\n\nВсе операции локальные, разрешение на интернет отсутствует. Последний результат остаётся до успешной следующей обработки. Элементы имеют текстовые подписи для TalkBack; проверка на вашем устройстве всё равно необходима.")
+            .setMessage("1. Выберите чистую запись одного голоса и MIDI.\n2. Выберите дорожку и послушайте мелодию.\n3. Совместите начало нот с голосом с помощью сдвига.\n4. Запустите обработку и сохраните WAV.\n\nPyWORLD меняет высоту звучащих участков голоса, сохраняя спектральную огибающую. Согласные и дыхание остаются непитчевыми. Большие интервалы могут звучать искусственно. В режиме ритма работает Rubber Band 4.0.0 R3/Finer: длительности фраз растягиваются или сжимаются, высота голоса сохраняется. Согласные и переходы обрабатываются непрерывно. Выравнивание опирается на атаки, паузы и длительности; MIDI может быть с другой мелодией. Разное число событий не требует обрезки каждого слога: одна фраза может охватывать несколько нот. Опция пауз заглушает только реальные паузы MIDI, без разрывов между соседними легато-нотами. Результат ограничен более коротким файлом. Сильные изменения темпа могут давать артефакты; автоматическое определение атак зависит от записи. Режим «Нарезка и ритм, затем тюнинг MIDI» выполняет оба этапа по порядку. В ручном редакторе задайте границы исходных фрагментов и их места в долях MIDI; одна доля — четвертная нота, темп и его изменения учитываются. Сохраните разметку, вернитесь и запустите обработку. Паузы между ручными фрагментами заполняются тишиной.\n\nFFmpeg определяет формат по содержимому, а не расширению. При ошибке есть дополнительная попытка чтения как MP3. Зашифрованные, повреждённые и неизвестные форматы могут не открыться.\n\nВокал смешивается в моно 32 кГц, результат — WAV PCM16. Максимум 10 минут и 512 МБ исходного файла. MIDI: тип 0/1 и RIFF RMID, до 8 МБ.\n\nВсе операции локальные, разрешение на интернет отсутствует. Последний результат остаётся до успешной следующей обработки. Элементы имеют текстовые подписи для TalkBack; проверка на вашем устройстве всё равно необходима.")
             .setPositiveButton("Закрыть",null).show());
         refresh();
     }
@@ -104,6 +115,7 @@ public class MainActivity extends Activity {
     private void refresh() {
         if (status==null) return;
         status.setText(Jobs.status);
+        manual.setChecked(prefs.getBoolean("manualEnabled",false));
         vocalName.setText("Вокал: "+prefs.getString("audioName","не выбран"));
         midiName.setText("MIDI: "+prefs.getString("midiName","не выбран"));
         String json=prefs.getString("tracks","");
@@ -118,6 +130,7 @@ public class MainActivity extends Activity {
         playVocal.setEnabled(free&&file("vocal.wav").exists());
         playMidi.setEnabled(free&&!trackIds.isEmpty());
         render.setEnabled(free&&file("vocal.wav").exists()&&!trackIds.isEmpty());
+        editManual.setEnabled(free&&file("vocal.wav").exists()&&!trackIds.isEmpty());
         playResult.setEnabled(free&&file("result.wav").exists()); export.setEnabled(playResult.isEnabled());
         cancel.setEnabled(Jobs.busy&&RenderState.processing);
     }
@@ -137,7 +150,7 @@ public class MainActivity extends Activity {
                     if(req==MIDI) {
                         String json=Jobs.engine(this).callAttr("inspect_midi",temp.getPath()).toString();
                         if(!temp.renameTo(file("melody.mid"))) throw new IOException("Не удалось сохранить MIDI");
-                        prefs.edit().putString("tracks",json).putString("midiName",name).putInt("trackIndex",0).apply();
+                        prefs.edit().remove("manualPlan").putBoolean("manualEnabled",false).putString("tracks",json).putString("midiName",name).putInt("trackIndex",0).apply();
                         Jobs.update("MIDI загружен. Выберите дорожку и послушайте её.");
                     } else {
                         Jobs.update("Декодирование аудио с помощью FFmpeg…");
@@ -150,7 +163,7 @@ public class MainActivity extends Activity {
                         if(!ReturnCode.isSuccess(s.getReturnCode())||!decoded.exists()||decoded.length()<6444) throw new IOException("Аудио не распознано. Файл повреждён, защищён или формат не поддерживается.");
                         if(decoded.length()>32000L*2*600+4096) throw new IOException("Вокал длиннее 10 минут. Сначала укоротите запись.");
                         if(!decoded.renameTo(file("vocal.wav"))) throw new IOException("Не удалось сохранить вокал");
-                        prefs.edit().putString("audioName",name).apply(); Jobs.update("Вокал загружен и готов к прослушиванию.");
+                        prefs.edit().remove("manualPlan").putBoolean("manualEnabled",false).putString("audioName",name).apply(); Jobs.update("Вокал загружен и готов к прослушиванию.");
                     }
                 }
             } catch(Throwable e) { Jobs.update("Ошибка: "+Jobs.error(e)); }
@@ -172,9 +185,10 @@ public class MainActivity extends Activity {
         final double seconds;final int shift;
         try {seconds=Double.parseDouble(offset.getText().toString().trim().replace(',','.'));shift=transposeValue();if(!Double.isFinite(seconds)||Math.abs(seconds)>600)throw new IllegalArgumentException();}
         catch(Exception e){Jobs.update("Проверьте числа: сдвиг от −600 до 600 секунд, транспозиция от −24 до 24");return;}
+        if(manual.isChecked()&&mode.getSelectedItemPosition()!=1&&prefs.getString("manualPlan","").isEmpty()){Jobs.update("Сначала откройте ручной редактор и сохраните разметку");return;}
         stopPlayback();saveSettings();
         file("cancel").delete();
-        Intent i=new Intent(this,RenderService.class).putExtra("track",trackValue()).putExtra("policy",policyValue()).putExtra("offset",seconds).putExtra("transpose",shift).putExtra("mute",mute.isChecked()).putExtra("rhythm",mode.getSelectedItemPosition()==0).putExtra("sensitivity",new double[]{.12,.06,.24}[sensitivity.getSelectedItemPosition()]);
+        Intent i=new Intent(this,RenderService.class).putExtra("track",trackValue()).putExtra("policy",policyValue()).putExtra("offset",seconds).putExtra("transpose",shift).putExtra("mute",mute.isChecked()).putExtra("mode",new String[]{"rhythm","pitch","both"}[mode.getSelectedItemPosition()]).putExtra("manual",manual.isChecked()).putExtra("sensitivity",new double[]{.12,.06,.24}[sensitivity.getSelectedItemPosition()]);
         Jobs.busy=true;RenderState.processing=true;Jobs.update("Запуск обработки…");
         try{if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}catch(Exception e){Jobs.busy=false;RenderState.processing=false;Jobs.update("Не удалось запустить обработку: "+Jobs.error(e));}
     }

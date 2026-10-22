@@ -10,7 +10,7 @@ RATE = 32000
 MAX_SECONDS = 600
 
 
-def read_midi(path):
+def load_midi(path):
     # Support Standard MIDI and RIFF RMID without relying on the extension.
     import io
     with open(path, 'rb') as f:
@@ -28,6 +28,11 @@ def read_midi(path):
     mid = mido.MidiFile(file=io.BytesIO(data))
     if mid.type == 2 or mid.ticks_per_beat <= 0:
         raise ValueError('Поддерживаются MIDI типа 0 и 1 с музыкальной шкалой времени; тип 2 и SMPTE не поддерживаются')
+    return mid
+
+
+def read_midi(path):
+    mid = load_midi(path)
     events = []
     for ti, track in enumerate(mid.tracks):
         tick = 0

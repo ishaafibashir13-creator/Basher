@@ -17,10 +17,12 @@ public class RenderService extends Service {
         return builder.setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle("Вокал и MIDI").setContentText(text).setContentIntent(open).setOngoing(true).build();
     }
+    private String phase="Обработка вокала";
+    public void stage(String text) { phase=text; Jobs.update(text); }
     public void progress(int percent) {
         // Speak no more than one change per ten percent.
         int ten = percent / 10 * 10;
-        String text = "Обработка вокала: " + ten + " процентов";
+        String text = phase + ": " + ten + " процентов";
         if (!Jobs.status.equals(text)) Jobs.update(text);
     }
     @Override public int onStartCommand(Intent intent, int flags, int id) {
@@ -42,22 +44,18 @@ public class RenderService extends Service {
         Jobs.worker.execute(() -> {
             File temp = new File(getFilesDir(), "result.tmp.wav");
             try {
-                String details = "";
-                if (intent.getBooleanExtra("rhythm", false)) {
-                    Jobs.engine(this); // Initialize the shared Python runtime.
-                    com.chaquo.python.PyObject result = com.chaquo.python.Python.getInstance().getModule("rhythm").callAttr("render",
-                        new File(getFilesDir(), "vocal.wav").getPath(),
-                        new File(getFilesDir(), "melody.mid").getPath(), intent.getIntExtra("track", 0),
-                        intent.getDoubleExtra("offset", 0), intent.getBooleanExtra("mute", false),
-                        temp.getPath(), cancel.getPath(), this, intent.getDoubleExtra("sensitivity", .12), intent.getStringExtra("policy"));
-                    org.json.JSONObject info = new org.json.JSONObject(result.toString());
-                    details = " Rubber Band R3. Нот MIDI: " + info.getInt("notes")
-                        + ", вокальных событий: " + info.getInt("source_events") + ".";
-                } else Jobs.engine(this).callAttr("render", new File(getFilesDir(), "vocal.wav").getPath(),
-                    new File(getFilesDir(), "melody.mid").getPath(), intent.getIntExtra("track", 0),
-                    intent.getStringExtra("policy"), intent.getDoubleExtra("offset", 0),
-                    intent.getIntExtra("transpose", 0), intent.getBooleanExtra("mute", false),
-                    temp.getPath(), cancel.getPath(), this);
+                Jobs.engine(this);
+                String mode=intent.getStringExtra("mode");
+                if(mode==null) mode=intent.getBooleanExtra("rhythm",false)?"rhythm":"pitch";
+                String plan=intent.getBooleanExtra("manual",false)?getSharedPreferences("project",MODE_PRIVATE).getString("manualPlan",""):"";
+                com.chaquo.python.PyObject result=com.chaquo.python.Python.getInstance().getModule("pipeline").callAttr("render",
+                    new File(getFilesDir(),"vocal.wav").getPath(),new File(getFilesDir(),"melody.mid").getPath(),intent.getIntExtra("track",0),
+                    intent.getStringExtra("policy"),intent.getDoubleExtra("offset",0),intent.getIntExtra("transpose",0),intent.getBooleanExtra("mute",false),
+                    temp.getPath(),cancel.getPath(),this,mode,plan,intent.getDoubleExtra("sensitivity",.12));
+                org.json.JSONObject info=new org.json.JSONObject(result.toString());
+                org.json.JSONObject timing=info.optJSONObject("rhythm");
+                String details="both".equals(mode)?" Сначала выполнено выравнивание, затем тюнинг MIDI.":"";
+                if(timing!=null) details+=" Rubber Band R3."+(timing.optBoolean("manual")?" Ручных фрагментов: "+timing.getInt("fragments")+".":" Нот MIDI: "+timing.getInt("notes")+", вокальных событий: "+timing.getInt("source_events")+".");
                 if (cancel.exists()) throw new IOException("Обработка отменена");
                 File dest = new File(getFilesDir(), "result.wav");
                 if (!temp.renameTo(dest)) throw new IOException("Не удалось сохранить результат");
