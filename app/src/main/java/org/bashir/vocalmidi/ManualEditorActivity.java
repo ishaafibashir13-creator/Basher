@@ -47,6 +47,8 @@ public class ManualEditorActivity extends Activity {
         scroll.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});
         TextView title=text("Ручная нарезка и выравнивание");title.setTextSize(24);if(Build.VERSION.SDK_INT>=28)title.setAccessibilityHeading(true);
         text("Все действия доступны кнопками и числовыми полями. Жесты по волне не нужны. Доля 1 — начало MIDI; одна доля равна четвертной ноте, включая размер 6/8. Дробная часть: 1,5 — середина первой доли. Изменения BPM учитываются. Пустоты между фрагментами станут тишиной; неуказанные участки исходника не попадут в результат.");
+        Button helpButton=button("Подробная справка по ручной нарезке",()->{stop();startActivity(new Intent(this,HelpActivity.class).putExtra("topic","manual"));});
+        controls.remove(helpButton);
         summary=text("Чтение темпа MIDI…");
         fragments=spinner("Выбранный фрагмент",new String[]{"Загрузка"});
         fragments.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){

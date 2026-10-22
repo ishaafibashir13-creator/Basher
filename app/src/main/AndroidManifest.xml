@@ -12,6 +12,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".ManualEditorActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" android:label="Ручная нарезка вокала" />
+        <activity android:name=".HelpActivity" android:exported="false" android:label="Подробная справка" android:windowSoftInputMode="stateAlwaysHidden|adjustResize" />
         <service android:name=".RenderService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
     </application>
 </manifest>

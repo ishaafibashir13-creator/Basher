@@ -1,10 +1,20 @@
-# VocalMidi 0.6 — ручная нарезка и ритм с тюнингом
+# VocalMidi 0.7 — подробная справка для начинающих
 
 Готовые файлы:
 
-- [Скачать APK 0.6](https://github.com/ishaafibashir13-creator/Basher/raw/refs/heads/main/downloads/VocalMidi-0.6.apk)
-- [Скачать исходники 0.6](https://github.com/ishaafibashir13-creator/Basher/raw/refs/heads/main/downloads/VocalMidi-0.6-source.zip)
+- [Скачать APK 0.7](https://github.com/ishaafibashir13-creator/Basher/raw/refs/heads/main/downloads/VocalMidi-0.7.apk)
+- [Скачать исходники 0.7](https://github.com/ishaafibashir13-creator/Basher/raw/refs/heads/main/downloads/VocalMidi-0.7-source.zip)
 - [Контрольные суммы SHA-256](downloads/SHA256SUMS.txt)
+
+В версии 0.7 добавлена **встроенная справка для людей без музыкальной подготовки**:
+26 разделов, словарь, пошаговый первый запуск, полный пример ручной нарезки
+с числами, инструкции TalkBack и разбор ошибок. Есть оглавление, поиск по всему
+тексту и переходы между темами. Справка открывается с главного экрана и прямо
+из ручного редактора; интернет не нужен.
+
+[Читать полное руководство в репозитории](USER_GUIDE.md).
+Текст совпадает со встроенным `app/src/main/assets/help/guide.json`.
+Проверка обновления: [VALIDATION-0.7.md](VALIDATION-0.7.md).
 
 В версии 0.5 прежняя обрезка отдельных фрагментов заменена встроенной
 [Rubber Band Library 4.0.0](https://breakfastquay.com/rubberband/) с движком
@@ -102,7 +112,7 @@ Android 7.0+, ARM64 или x86_64. Нужны Java 17/21, Android SDK 35 и Pyth
     ./gradlew assembleDebug assembleDebugAndroidTest lintDebug
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. Предоставленный APK —
-устанавливаемая debug-сборка; версии 0.2–0.6 из этой рабочей среды подписаны
+устанавливаемая debug-сборка; версии 0.2–0.7 из этой рабочей среды подписаны
 одним сертификатом и имеют возрастающий versionCode. Для публикации
 собственного release используйте собственный ключ.
 
@@ -134,7 +144,7 @@ wheels с `--no-index`. Gradle и Android-зависимости загружа�
 
 ## Исходники и лицензии
 
-Приложение версии 0.6 распространяется под **GPL-3.0-or-later**; исходная
+Приложение версии 0.7 распространяется под **GPL-3.0-or-later**; исходная
 MIT-лицензия прежнего кода сохранена в `licenses/VocalMidi-0.4-MIT.txt`.
 Rubber Band 4.0.0 — GPL-2.0-or-later, используется по варианту GPL 3.
 Полные исходники, сборочные скрипты и лицензии доступны в этом репозитории;
