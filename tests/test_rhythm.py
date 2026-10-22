@@ -68,36 +68,46 @@ class RhythmTests(unittest.TestCase):
         self.make_midi([.1, .8], chord=True)
         self.assertEqual(self.render()['slices'], 2)
 
-    def test_mismatch_preserves_existing_output(self):
+    def test_more_fragments_than_notes_are_grouped_in_order(self):
         self.make_midi([0], duration=1.5)
-        self.out.write_bytes(b'existing')
-        with self.assertRaisesRegex(ValueError, 'фрагментов: 2'):
-            self.render()
-        self.assertEqual(self.out.read_bytes(), b'existing')
+        units = rhythm.detect_units(self.wav, .12, self.cancel, max_frames=48000)
+        report = self.render()
+        self.assertEqual(report['detected_units'], 2)
+        self.assertEqual(report['slices'], 1)
+        a, b = units[0][0], units[-1][1]
+        np.testing.assert_array_equal(self.pcm(self.out)[256:b-a-256],
+                                      self.pcm(self.wav)[a+256:b-256])
 
-    def test_no_compression_or_truncation(self):
+    def test_long_fragment_is_cropped_instead_of_rejected(self):
         self.make_midi([0, .1], duration=1.2)
-        with self.assertRaisesRegex(ValueError, 'не помещается'):
-            self.render()
+        report = self.render()
+        self.assertGreater(report['trimmed_slices'], 0)
+        self.assertEqual(len(self.pcm(self.out)), 41600)
+        self.assertEqual(self.pcm(self.out)[3199], 0)
 
-    def test_noteoff_constraint_optional(self):
+    def test_noteoff_constraint_trims_and_mutes_gaps(self):
         x = self.pcm(self.wav).copy()
         x[16000:22400] = x[32000:38400]
         x[32000:38400] = 0
         engine.write_wav(self.wav, x.astype(float)/32767)
         self.make_midi([.1, .8], duration=.1)
-        self.render()
-        with self.assertRaisesRegex(ValueError, 'не помещается'):
-            self.render(mute=True)
+        self.assertEqual(self.render()['trimmed_slices'], 1)
+        report = self.render(mute=True)
+        y = self.pcm(self.out)
+        self.assertEqual(report['trimmed_slices'], 2)
+        self.assertTrue(np.all(y[6400:25600] == 0))
+        self.assertGreater(np.max(np.abs(y[3200:6400])), 1000)
+        self.assertGreater(np.max(np.abs(y[25600:28800])), 1000)
 
     def test_negative_offset_rejected(self):
         with self.assertRaisesRegex(ValueError, 'сдвиг|раньше нуля'):
             self.render(offset=-1)
 
-    def test_silent_input(self):
+    def test_silent_input_returns_silence(self):
         engine.write_wav(self.wav, np.zeros(32000))
-        with self.assertRaisesRegex(ValueError, 'тихий'):
-            self.render()
+        self.render()
+        self.assertEqual(len(self.pcm(self.out)), 32000)
+        self.assertTrue(np.all(self.pcm(self.out) == 0))
 
     def test_cancellation(self):
         self.cancel.touch()
@@ -161,6 +171,81 @@ class RhythmTests(unittest.TestCase):
         self.make_midi([.1, .8, 2.], duration=.4)
         self.render(offset=.2)
         self.assertEqual(len(self.pcm(self.out)), 64000)
+
+
+    def test_user_case_203_fragments_and_390_notes(self):
+        count = round(203*.12*32000)
+        x = np.zeros(count)
+        tone = .4*np.sin(2*np.pi*220*np.arange(2560)/32000)
+        for i in range(203):
+            a = i*3840+320
+            x[a:a+2560] = tone
+        engine.write_wav(self.wav, x)
+        self.assertEqual(len(rhythm.detect_units(self.wav, .12, self.cancel)), 203)
+        spacing = (count/32000)/390
+        self.make_midi([i*spacing for i in range(390)], duration=spacing)
+        report = self.render()
+        self.assertEqual(report['detected_units'], 203)
+        self.assertEqual(report['slices'], 390)
+        self.assertFalse(report['time_stretch'])
+        expected = min(count, round(mido.MidiFile(self.mid).length*32000))
+        self.assertEqual(len(self.pcm(self.out)), expected)
+        self.assertGreater(np.count_nonzero(self.pcm(self.out)), count//10)
+
+    def test_any_positive_number_of_notes_succeeds(self):
+        for n in [1, 2, 3, 7, 20, 100]:
+            with self.subTest(notes=n):
+                self.make_midi([i*2/n for i in range(n)], duration=2/n)
+                report = self.render()
+                self.assertEqual(report['slices'], n)
+                self.assertEqual(len(self.pcm(self.out)), 64000)
+
+    def test_split_ranges_preserve_all_source_samples_once(self):
+        units = [(0, 1200), (1800, 2200), (2700, 4700)]
+        env = np.ones(30)
+        env[5] = .01
+        for count in [4, 7, 11, 100, 5000]:
+            with self.subTest(slices=count):
+                slices = rhythm.adapt_units(units, count, env, self.cancel)
+                self.assertEqual(len(slices), count)
+                # Independently mark consumed source samples to prove no loss or repeat.
+                consumed = np.zeros(4700, dtype=int)
+                for a, b in slices:
+                    consumed[a:b] += 1
+                expected = np.zeros(4700, dtype=int)
+                for a, b in units:
+                    expected[a:b] = 1
+                np.testing.assert_array_equal(consumed, expected)
+
+    def test_short_attack_below_detector_minimum_still_renders(self):
+        x = np.zeros(64000)
+        x[6400:6720] = .4*np.sin(2*np.pi*220*np.arange(320)/32000)
+        engine.write_wav(self.wav, x)
+        report = self.render()
+        self.assertEqual(report['slices'], 2)
+        self.assertGreater(np.count_nonzero(self.pcm(self.out)), 0)
+
+    def test_quiet_recording_keeps_audible_samples(self):
+        t = np.arange(32000)/32000
+        engine.write_wav(self.wav, .0003*np.sin(2*np.pi*220*t))
+        self.make_midi([0], duration=1)
+        self.render()
+        np.testing.assert_array_equal(self.pcm(self.wav)[256:-256],
+                                      self.pcm(self.out)[256:-256])
+
+    def test_more_note_onsets_than_active_source_samples(self):
+        slices = rhythm.adapt_units([(0, 2)], 8, np.ones(1), self.cancel)
+        self.assertEqual(len(slices), 8)
+        self.assertEqual(sum(b-a for a, b in slices), 2)
+        self.assertEqual(slices[0][0], 0)
+        self.assertEqual(slices[-1][1], 2)
+
+    def test_cancel_during_adaptation_preserves_existing_result(self):
+        self.out.write_bytes(b'previous WAV')
+        self.cancel.touch()
+        with self.assertRaises(InterruptedError):
+            self.render()
+        self.assertEqual(self.out.read_bytes(), b'previous WAV')
 
 if __name__ == '__main__':
     unittest.main()

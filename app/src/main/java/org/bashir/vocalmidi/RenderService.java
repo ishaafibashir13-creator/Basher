@@ -42,13 +42,18 @@ public class RenderService extends Service {
         Jobs.worker.execute(() -> {
             File temp = new File(getFilesDir(), "result.tmp.wav");
             try {
+                String details = "";
                 if (intent.getBooleanExtra("rhythm", false)) {
                     Jobs.engine(this); // Initialize the shared Python runtime.
-                    com.chaquo.python.Python.getInstance().getModule("rhythm").callAttr("render",
+                    com.chaquo.python.PyObject result = com.chaquo.python.Python.getInstance().getModule("rhythm").callAttr("render",
                         new File(getFilesDir(), "vocal.wav").getPath(),
                         new File(getFilesDir(), "melody.mid").getPath(), intent.getIntExtra("track", 0),
                         intent.getDoubleExtra("offset", 0), intent.getBooleanExtra("mute", false),
                         temp.getPath(), cancel.getPath(), this, intent.getDoubleExtra("sensitivity", .12));
+                    org.json.JSONObject info = new org.json.JSONObject(result.toString());
+                    details = " Найдено фрагментов: " + info.getInt("detected_units")
+                        + ", нарезано: " + info.getInt("slices")
+                        + ", подрезано по интервалам: " + info.getInt("trimmed_slices") + ".";
                 } else Jobs.engine(this).callAttr("render", new File(getFilesDir(), "vocal.wav").getPath(),
                     new File(getFilesDir(), "melody.mid").getPath(), intent.getIntExtra("track", 0),
                     intent.getStringExtra("policy"), intent.getDoubleExtra("offset", 0),
@@ -58,7 +63,7 @@ public class RenderService extends Service {
                 File dest = new File(getFilesDir(), "result.wav");
                 if (!temp.renameTo(dest)) throw new IOException("Не удалось сохранить результат");
                 Jobs.busy = false;
-                Jobs.update("Готово. Результат можно прослушать и сохранить в WAV.");
+                Jobs.update("Готово. Результат можно прослушать и сохранить в WAV." + details);
             } catch (Throwable e) {
                 temp.delete();
                 Jobs.busy = false;
