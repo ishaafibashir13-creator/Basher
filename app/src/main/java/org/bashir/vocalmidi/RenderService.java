@@ -49,11 +49,10 @@ public class RenderService extends Service {
                         new File(getFilesDir(), "vocal.wav").getPath(),
                         new File(getFilesDir(), "melody.mid").getPath(), intent.getIntExtra("track", 0),
                         intent.getDoubleExtra("offset", 0), intent.getBooleanExtra("mute", false),
-                        temp.getPath(), cancel.getPath(), this, intent.getDoubleExtra("sensitivity", .12));
+                        temp.getPath(), cancel.getPath(), this, intent.getDoubleExtra("sensitivity", .12), intent.getStringExtra("policy"));
                     org.json.JSONObject info = new org.json.JSONObject(result.toString());
-                    details = " Найдено фрагментов: " + info.getInt("detected_units")
-                        + ", нарезано: " + info.getInt("slices")
-                        + ", подрезано по интервалам: " + info.getInt("trimmed_slices") + ".";
+                    details = " Rubber Band R3. Нот MIDI: " + info.getInt("notes")
+                        + ", вокальных событий: " + info.getInt("source_events") + ".";
                 } else Jobs.engine(this).callAttr("render", new File(getFilesDir(), "vocal.wav").getPath(),
                     new File(getFilesDir(), "melody.mid").getPath(), intent.getIntExtra("track", 0),
                     intent.getStringExtra("policy"), intent.getDoubleExtra("offset", 0),
